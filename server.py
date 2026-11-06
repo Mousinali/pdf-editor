@@ -1,19 +1,16 @@
-import io, os, re, shutil, tempfile, time, uuid, threading, zipfile, json
+import io, os, re, shutil, subprocess, tempfile, time, uuid, threading, zipfile, json
 import fitz  # PyMuPDF
 import math
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from werkzeug.exceptions import HTTPException
-import pythoncom, pywintypes
-import win32com.client
 from flask import Flask, request, send_file, send_from_directory, abort
 import db
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
 word_lock = threading.Lock()
-WD_FORMAT_PDF = 17
 
 @app.after_request
 def cors(resp):
@@ -130,35 +127,12 @@ def make_word2007_safe(path):
     os.replace(tmp, path)
 
 def word_to_pdf(src, out):
-    pythoncom.CoInitialize()
-    word = None
-    try:
-        word = win32com.client.DispatchEx('Word.Application')
-        word.Visible = False
-        word.DisplayAlerts = 0
-        doc = word.Documents.Open(src, ReadOnly=True)
-        try:
-            try:
-                doc.ExportAsFixedFormat(out, WD_FORMAT_PDF)
-            except pywintypes.com_error:
-                # Office 2007 without the PDF add-in: print via Windows' PDF printer
-                word.ActivePrinter = 'Microsoft Print to PDF'
-                word.Options.PrintBackground = False
-                doc.PrintOut(Background=False, Append=False, Range=0, OutputFileName=out,
-                             Item=0, PrintToFile=True)
-                last = -1  # the printer keeps writing after PrintOut returns; wait for a stable size
-                for _ in range(120):
-                    size = os.path.getsize(out) if os.path.exists(out) else 0
-                    if size and size == last:
-                        break
-                    last = size
-                    time.sleep(0.5)
-        finally:
-            doc.Close(False)
-    finally:
-        if word:
-            word.Quit()
-        pythoncom.CoUninitialize()
+    # requires the `libreoffice` (soffice) package on the host
+    work = os.path.dirname(src)
+    subprocess.run(
+        ['soffice', '--headless', '--norestore', '--convert-to', 'pdf', '--outdir', work, src],
+        check=True, capture_output=True, timeout=120,
+    )
 
 @app.post('/convert')
 def convert():

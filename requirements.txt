@@ -4,6 +4,5 @@ pypdf
 reportlab
 pdf2docx
 lxml
-pywin32
 pymysql
 cryptography

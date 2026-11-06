@@ -1,11 +1,10 @@
 # Deploying to an Ubuntu server on Oracle Cloud (OCI)
 
-> **Blocker:** `server.py` uses `pywin32`/`win32com.client` (MS Word COM automation)
-> for `/convert` and `/pdf2word`. That's Windows-only — it will not import or run
-> on Ubuntu. Either drop those two routes or replace them with a Linux-compatible
-> converter (e.g. LibreOffice headless: `soffice --headless --convert-to pdf`)
-> before relying on them in production. Everything else (merge/split/compress/
-> protect/unlock/rotate/watermark/editor) is pure Python and fine on Linux.
+> `server.py`'s `/convert` route now shells out to LibreOffice headless (`soffice`)
+> instead of the old Windows-only `win32com`/Word COM automation, so it runs on
+> Ubuntu. Make sure `libreoffice` is installed (step 2) — the route will fail
+> without it. `/pdf2word` already used the pure-Python `pdf2docx` library and
+> needs no changes.
 
 ## 1. Provision the instance
 - OCI Console → Compute → Create Instance → Ubuntu 22.04/24.04 image.
@@ -20,14 +19,21 @@ ssh ubuntu@<INSTANCE_PUBLIC_IP>
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y python3-venv python3-pip mysql-server nginx libreoffice
 ```
-(`libreoffice` only needed if you replace the Word COM conversions.)
+(`libreoffice` provides `soffice`, used by `/convert` for Word→PDF.)
 
-## 3. Upload the code
-From your local machine:
+## 3. Get the code from GitHub
+On the server:
 ```bash
-scp -r /Users/mousinturain/Downloads/pdf ubuntu@<INSTANCE_PUBLIC_IP>:~/pdf-app
+sudo apt install -y git
+git clone <YOUR_GITHUB_REPO_URL> ~/pdf-app
+cd ~/pdf-app
 ```
-(or `git clone` if you push this to a repo instead.)
+To deploy a later update:
+```bash
+cd ~/pdf-app
+git pull
+sudo systemctl restart pdf-app
+```
 
 ## 4. Set up the app on the server
 ```bash
@@ -35,7 +41,6 @@ cd ~/pdf-app
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt gunicorn
-# remove pywin32 from requirements.txt first — it won't install on Linux
 ```
 
 Create `.env` from `.env.example` with real MySQL credentials:
